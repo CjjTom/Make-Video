@@ -2,3 +2,4 @@ pyrogram
 python-dotenv
 google-generativeai
 ffmpeg-python
+tgcrypto
