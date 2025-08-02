@@ -1,3 +1,8 @@
+# ====================================================================
+# A single-file Telegram Shorts Bot with MongoDB and Admin Panel
+# ====================================================================
+
+# === 1. Imports and Configuration ===
 import os
 import subprocess
 import shlex
@@ -27,7 +32,7 @@ GEMINI_API_KEY = "AIzaSyDelpeEYkt1M_grzmvvcmFoKnlaCG_E2fY"
 ADMIN_ID = 6644681404
 
 MONGO_URI = "mongodb+srv://cristi7jjr:tRjSVaoSNQfeZ0Ik@cluster0.kowid.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-DB_NAME = "shortsBot_db"  # The database name we are explicitly using
+DB_NAME = "shortsBot_db"
 COLLECTION_NAME = "shortsTom"
 
 # === 2. Database and AI Setup ===
@@ -252,20 +257,48 @@ async def handle_query(client, callback_query):
     await callback_query.answer()
 
     user_data = get_user_settings(user_id)
-    if not user_data.get("video_path") and not data.startswith("admin_"):
+    if user_data.get("video_path") is None and not data.startswith("admin_"):
         await callback_query.message.reply_text("Please send a video or a YouTube link first to begin.")
         return
 
     if data == "duration":
-        # ... (same as before)
+        await callback_query.message.edit_text(
+            "⏱ Choose a clip duration:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"{x}s", callback_data=f"duration:{x}") for x in ["20", "30", "59"]],
+                [InlineKeyboardButton(f"{x}s", callback_data=f"duration:{x}") for x in ["90", "120", "180"]],
+                [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+            ])
+        )
     elif data.startswith("duration:"):
-        # ... (same as before)
+        duration = int(data.split(":")[1])
+        update_user_settings(user_id, "duration", duration)
+        await callback_query.message.edit_text(f"⏱ Duration set to {duration}s. What's next?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")]]))
+    
     elif data == "ratio":
-        # ... (same as before)
+        await callback_query.message.edit_text(
+            "📏 Choose an aspect ratio:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Original", callback_data="ratio:original")],
+                [InlineKeyboardButton("9:16 (Shorts)", callback_data="ratio:9:16"), InlineKeyboardButton("1:1 (Square)", callback_data="ratio:1:1")],
+                [InlineKeyboardButton("4:3", callback_data="ratio:4:3"), InlineKeyboardButton("16:9 (Horizontal)", callback_data="ratio:16:9")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+            ])
+        )
     elif data.startswith("ratio:"):
-        # ... (same as before)
+        ratio = data.split(":")[1]
+        update_user_settings(user_id, "ratio", ratio)
+        await callback_query.message.edit_text(f"📏 Ratio set to {ratio}. What's next?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")]]))
+
     elif data == "clip_count":
-        # ... (same as before)
+        await callback_query.message.edit_text(
+            "🎬 Choose the number of clips:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(str(x), callback_data=f"clip_count:{x}") for x in [2, 5, 8, 10]],
+                [InlineKeyboardButton("Custom", callback_data="clip_count:custom")],
+                [InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")],
+            ])
+        )
     elif data.startswith("clip_count:"):
         count = data.split(":")[1]
         if count == "custom":
@@ -306,11 +339,9 @@ async def handle_query(client, callback_query):
         )
     elif data.startswith("feature:"):
         feature = data.split(":")[1]
-        # Invert the feature's status
         current_status = user_data.get("advanced_features", {}).get(feature, False)
         update_user_settings(user_id, f"advanced_features.{feature}", not current_status)
         
-        # Get the updated settings to reflect the change
         updated_settings = get_user_settings(user_id)
         status_text = "Enabled" if updated_settings["advanced_features"][feature] else "Disabled"
         await callback_query.message.edit_text(f"🤖 Advanced feature '{feature}' is now {status_text}. What's next?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back_to_main")]]))
@@ -319,7 +350,27 @@ async def handle_query(client, callback_query):
         await callback_query.message.edit_text("Please choose your settings:", reply_markup=get_main_menu_markup())
 
     elif data == "generate":
-        # ... (same as before)
+        await callback_query.message.reply_text("🚀 Starting to generate your shorts. This might take a few moments...")
+        
+        opts = get_user_settings(user_id)
+        clips = generate_clips(opts.get("video_path"), opts)
+        
+        if clips:
+            for clip_path in clips:
+                caption_text = generate_caption({"duration": opts.get("duration", 30)})
+                await client.send_video(callback_query.message.chat.id, video=clip_path, caption=caption_text)
+                os.remove(clip_path)
+            
+            update_user_stats(user_id, "shorts_generated", len(clips))
+            update_user_stats(user_id, "uploads_sent", len(clips))
+            
+            await callback_query.message.reply_text("✅ All shorts generated successfully! Files have been cleaned up.")
+        else:
+            await callback_query.message.reply_text("⚠️ An error occurred while generating the shorts. Please try again.")
+
+        if opts.get("video_path") and os.path.exists(opts["video_path"]):
+            os.remove(opts["video_path"])
+        update_user_settings(user_id, "video_path", None)
         
     elif data == "admin_stats" and user_id == ADMIN_ID:
         total_users = shorts_collection.count_documents({})
@@ -372,3 +423,4 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"An error occurred during bot startup: {e}")
         sys.exit(1)
+
