@@ -1,29 +1,27 @@
-# Use official slim Python image
+# Use a minimal Python 3.9 image as the base
 FROM python:3.9-slim
 
-# Prevents interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Set working directory
+# Set the working directory for the application
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies, including FFmpeg for video processing
+RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsm6 \
     libxext6 \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy the requirements file into the container
 COPY requirements.txt .
+
+# Install the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source files
-COPY . .
+# Copy the main application file into the container
+COPY main.py .
 
-# Optional: expose port if using webhooks
+# Expose port 8080 for the health check server
 EXPOSE 8080
 
-# Run the bot
+# The command to run the bot when the container starts
 CMD ["python", "main.py"]
